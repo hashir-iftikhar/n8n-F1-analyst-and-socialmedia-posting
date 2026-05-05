@@ -1,0 +1,1204 @@
+{
+  "name": "SHARABLE F1 WORKFLOW",
+  "nodes": [
+    {
+      "parameters": {
+        "url": "https://api.jolpi.ca/ergast/f1/current/last/results.json",
+        "options": {}
+      },
+      "id": "64294c51-8143-4871-a1ef-ccd855f7a327",
+      "name": "Jolpica – Race Results",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        160,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.jolpi.ca/ergast/f1/current/last/qualifying.json",
+        "options": {}
+      },
+      "id": "0399d045-0237-4cbc-b34e-2576582a52b1",
+      "name": "Jolpica – Qualifying",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        160,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.jolpi.ca/ergast/f1/current/driverStandings.json",
+        "options": {}
+      },
+      "id": "a3d8ec9a-5d96-4d9a-866b-3f06df9f6f88",
+      "name": "Jolpica – Driver Standings",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        160,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.jolpi.ca/ergast/f1/current/constructorStandings.json",
+        "options": {}
+      },
+      "id": "18f2751d-dc67-4edc-9b85-243d9a099d9f",
+      "name": "Jolpica – Constructor Standings",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        160,
+        496
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.jolpi.ca/ergast/f1/current/last/pitstops.json",
+        "options": {}
+      },
+      "id": "60443bd3-3991-46aa-993f-d69103cd9bc8",
+      "name": "Jolpica – Pit Stops",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        160,
+        688
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.jolpi.ca/ergast/f1/current.json",
+        "options": {}
+      },
+      "id": "4b4a065a-bc8c-4103-b062-4cc3d46e3b7e",
+      "name": "Jolpica – Season Schedule",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        160,
+        880
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const jolpicaRace = $('Jolpica – Race Results').first().json?.MRData?.RaceTable?.Races?.[0] || {};\n\nconst jolpicaQuali = $('Jolpica – Qualifying').first().json?.MRData?.RaceTable?.Races?.[0]?.QualifyingResults || [];\n\nconst jolpicaDriverS = $('Jolpica – Driver Standings').first().json?.MRData?.StandingsTable?.StandingsLists?.[0]?.DriverStandings || [];\n\nconst jolpicaConstrS = $('Jolpica – Constructor Standings').first().json?.MRData?.StandingsTable?.StandingsLists?.[0]?.ConstructorStandings || [];\n\nconst jolpicaPits = $('Jolpica – Pit Stops').first().json?.MRData?.RaceTable?.Races?.[0]?.PitStops || [];\n\nconst schedule = $('Jolpica – Season Schedule').first().json?.MRData?.RaceTable?.Races || [];\n\n\n// ================== RESULTS ==================\n\nconst results = (jolpicaRace.Results || []).map(r => {\n\n  const q = Array.isArray(jolpicaQuali)\n    ? jolpicaQuali.find(q => q.Driver?.driverId === r.Driver?.driverId)\n    : null;\n\n  const grid = parseInt(r.grid || 0);\n  const pos  = parseInt(r.position || 0);\n\n  return {\n    position: pos,\n    gridPosition: grid,\n    positionsGained: grid - pos,\n\n    driver: (r.Driver?.givenName || '') + ' ' + (r.Driver?.familyName || ''),\n    driverId: r.Driver?.driverId || '',\n    nationality: r.Driver?.nationality || '',\n\n    constructor: r.Constructor?.name || '',\n\n    points: parseFloat(r.points || 0),\n    status: r.status || '',\n\n    fastestLap: r.FastestLap || null,\n\n    qualifyingTime: q ? (q.Q3 || q.Q2 || q.Q1 || 'N/A') : 'N/A',\n\n    time: r.Time?.time || r.status\n  };\n});\n\n\n// ================== INSIGHTS ==================\n\nconst biggestMover = [...results]\n  .filter(r => r.positionsGained > 0)\n  .sort((a, b) => b.positionsGained - a.positionsGained)[0] || null;\n\nconst fastestLapHolder = results.find(r => r.fastestLap?.rank === '1') || null;\n\nconst dnfs = results.filter(r =>\n  r.status &&\n  r.status !== 'Finished' &&\n  !r.status.startsWith('+')\n);\n\n\n// ================== SEASON ==================\n\nconst currentRound = parseInt(jolpicaRace.round || '0');\nconst totalRaces = Array.isArray(schedule) ? schedule.length : 0;\nconst racesLeft = totalRaces - currentRound;\n\n\n// ================== OUTPUT ==================\n\nreturn [{\n  json: {\n\n    race: {\n      name: jolpicaRace.raceName || 'Unknown Race',\n      season: jolpicaRace.season || new Date().getFullYear(),\n      round: jolpicaRace.round || '?',\n\n      circuit: jolpicaRace.Circuit?.circuitName || 'Unknown Circuit',\n      country: jolpicaRace.Circuit?.Location?.country || '',\n      city: jolpicaRace.Circuit?.Location?.locality || '',\n\n      date: jolpicaRace.date || new Date().toISOString().split('T')[0]\n    },\n\n    results: results.slice(0, 20),\n    podium: results.slice(0, 3),\n    winner: results[0] || {},\n\n    biggestMover,\n    fastestLapHolder,\n    dnfs,\n\n    pitstops: Array.isArray(jolpicaPits) ? jolpicaPits : [],\n    qualifying: Array.isArray(jolpicaQuali) ? jolpicaQuali.slice(0, 10) : [],\n\n    driverStandings: jolpicaDriverS,\n    constructorStandings: jolpicaConstrS,\n\n    // ✅ CLEAN DATA FOR AI\n    driverStandingsTop5: jolpicaDriverS.slice(0,5),\n    constructorStandingsTop4: jolpicaConstrS.slice(0,4),\n\n    season: {\n      totalRaces,\n      currentRound,\n      racesLeft,\n      pointsLeft: racesLeft * 26\n    }\n  }\n}];"
+      },
+      "id": "890a3dca-6cd5-444b-8b4a-3d0024c440f4",
+      "name": "Build Unified Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        608,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "ENTER_YOUR_API_KEY"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.body }}",
+        "options": {}
+      },
+      "id": "a158764f-73c7-41e6-89fe-db34be61b905",
+      "name": "AI – Race Analysis",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1056,
+        496
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "EZtHuLk0ZD3sdVXx",
+          "name": "Header Auth account"
+        }
+      },
+      "notes": "Sonnet for deep analysis. Credential: HTTP Header Auth → x-api-key → your sk-ant-... key"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "ENTER_YOUR_API_KEY"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.body }}",
+        "options": {}
+      },
+      "id": "8ebc7d6f-a067-40c3-ad01-c80ed2bef98e",
+      "name": "AI – Championship Analysis",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1056,
+        304
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "EZtHuLk0ZD3sdVXx",
+          "name": "Header Auth account"
+        }
+      },
+      "notes": "Sonnet for championship narrative and points math."
+    },
+    {
+      "parameters": {
+        "jsCode": "function parseAI(nodeName) {\n  try {\n    const raw = $node[nodeName].json.content[0].text;\n    return JSON.parse(raw.replace(/```json|```/g, '').trim());\n  } catch(e) {\n    return { _parseError: true, _node: nodeName };\n  }\n}\nconst analysis     = parseAI('AI – Race Analysis');\nconst championship = parseAI('AI – Championship Analysis');\nconst payload      = $('Build Unified Payload').item.json;\nreturn [{ json: { analysis, championship, payload } }];"
+      },
+      "id": "902bbeb5-8317-4f96-b113-b6cbc53e7bdd",
+      "name": "Parse AI Outputs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1504,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "ENTER_YOUR_API_KEY"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.body }}",
+        "options": {}
+      },
+      "id": "e19fa54e-0a9a-4933-aa95-2359afd90861",
+      "name": "Generate – Facebook Post",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1952,
+        208
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "EZtHuLk0ZD3sdVXx",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "ENTER_YOUR_API_KEY"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.body }}",
+        "options": {}
+      },
+      "id": "1bd12c10-0dd8-4a77-b9cd-f100cd15d558",
+      "name": "Generate – Discord Message",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1952,
+        400
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "EZtHuLk0ZD3sdVXx",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "ENTER_YOUR_API_KEY"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.body }}",
+        "options": {}
+      },
+      "id": "db88dfd4-ef23-489c-9f99-61a524169980",
+      "name": "Generate – Email HTML",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1952,
+        592
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "EZtHuLk0ZD3sdVXx",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://graph.facebook.com/v19.0/USER_ID/feed",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "access_token",
+              "value": "YOUR_API"
+            },
+            {
+              "name": "message",
+              "value": "={{ $('Generate – Facebook Post').item.json.content[0].text }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "da773ddb-e0ff-4559-9ebc-d86b4f84c437",
+      "name": "Post to Facebook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2176,
+        192
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "YOUR_WEHBOOK_URL",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "content",
+              "value": "={{ $('Generate – Discord Message').item.json.content[0].text }}"
+            },
+            {
+              "name": "username",
+              "value": "YOUR_USERNAME"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "9053e77b-6d31-4f65-8370-98b36e55d2dd",
+      "name": "Post to Discord",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2176,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": " LIST_RECEIVER_EMAIL",
+        "subject": "=🏁 {{ $('Build Unified Payload').item.json.race.name }} {{ $('Build Unified Payload').item.json.race.season }} — Race Report",
+        "message": "={{ $('Generate – Email HTML').item.json.content[0].text }}",
+        "options": {
+          "appendAttribution": false,
+          "replyTo": "your@email.com"
+        }
+      },
+      "id": "b903eb3b-bfd6-4f0f-9203-fa2f96856d23",
+      "name": "Send Gmail Newsletter",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        2176,
+        592
+      ],
+      "webhookId": "20edcd2c-2fea-475e-ba24-75fdc2f0c542",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "F52HlEZdQ71atokB",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const a = $('Parse AI Outputs').item.json.analysis;\nconst c = $('Parse AI Outputs').item.json.championship;\nconst r = $('Build Unified Payload').item.json.race;\nconst s = $('Build Unified Payload').item.json.season;\nreturn [{ json: {\n  race_name:            a.race_name,\n  race_circuit:         a.race_circuit,\n  race_country:         a.race_country,\n  race_date:            a.race_date,\n  season:               r.season,\n  round:                r.round,\n  winner:               a.podium?.[0]?.driver,\n  winner_team:          a.podium?.[0]?.constructor,\n  p2_driver:            a.podium?.[1]?.driver,\n  p3_driver:            a.podium?.[2]?.driver,\n  podium_json:          JSON.stringify(a.podium),\n  fastest_lap_driver:   a.fastest_lap?.driver,\n  fastest_lap_time:     a.fastest_lap?.lap_time,\n  biggest_mover:        a.biggest_mover?.driver,\n  biggest_mover_gained: a.biggest_mover?.gained,\n  strategy_winner:      a.strategy_winner,\n  notable_dnfs:         a.notable_dnfs,\n  race_rating:          a.race_rating,\n  race_verdict:         a.race_verdict,\n  wdc_leader:           c.wdc_leader,\n  wdc_gap:              c.wdc_gap,\n  championship_verdict: c.championship_verdict,\n  is_title_over:        c.is_title_over,\n  races_remaining:      s.racesLeft,\n  points_available:     s.pointsLeft,\n  raw_analysis_json:    JSON.stringify(a),\n  raw_championship_json:JSON.stringify(c),\n  created_at:           new Date().toISOString()\n}}];"
+      },
+      "id": "1885ae62-6617-4eef-9180-10db24b9d09c",
+      "name": "Build DB Record",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2400,
+        496
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=YOUR_SUPABASE_URL",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "YOUR_API_KEY"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer YOUR_API_KEY"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "resolution=merge-duplicates"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "7d512c93-bb98-46b4-852b-f86ad56eb646",
+      "name": "Save to Supabase",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2624,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "YOUR_CHAT_ID",
+        "text": "={{ $json.message }}",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "7c863f5f-2a8f-460f-bec9-6274e9dd8f93",
+      "name": "Telegram – Done Alert",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2848,
+        592
+      ],
+      "webhookId": "3f85a4c6-6752-429a-b152-44dc153d9465",
+      "credentials": {
+        "telegramApi": {
+          "id": "8kfhpD4U4TP9OyiW",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "numberInputs": 6
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        384,
+        336
+      ],
+      "id": "406b6980-dedb-4948-bc47-a2032d387b6f",
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "jsCode": "const payload = $('Build Unified Payload').first().json;\n\nconst body = {\n  model: \"claude-sonnet-4-6\",\n  max_tokens: 700,\n  messages: [\n    {\n      role: \"user\",\n      content: `Analyze the F1 championship fight after this race.\\n\\nRACE: ${payload.race.name} ${payload.race.season}\\nROUND: ${payload.race.round} of ${payload.season.totalRaces}\\nRACES LEFT: ${payload.season.racesLeft}\\nPOINTS STILL AVAILABLE: ${payload.season.pointsLeft}\\n\\nDRIVER STANDINGS (top 5): ${JSON.stringify(payload.driverStandingsTop5)}\\n\\nCONSTRUCTOR STANDINGS (top 4): ${JSON.stringify(payload.constructorStandingsTop4)}\\n\\nSTRICT INSTRUCTIONS:\\n- Return ONLY valid JSON\\n- No explanation\\n- No markdown\\n\\nReturn this exact structure:\\n{\\n  \\\"wdc_leader\\\": string,\\n  \\\"wdc_second\\\": string,\\n  \\\"wdc_gap\\\": number,\\n  \\\"wdc_narrative\\\": string,\\n  \\\"wcc_leader\\\": string,\\n  \\\"wcc_gap\\\": number,\\n  \\\"wcc_narrative\\\": string,\\n  \\\"races_remaining\\\": number,\\n  \\\"points_available\\\": number,\\n  \\\"is_title_over\\\": boolean,\\n  \\\"championship_verdict\\\": string,\\n  \\\"next_race_stakes\\\": string\\n}`\n    }\n  ]\n};\n\nreturn [{ json: { body } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        832,
+        400
+      ],
+      "id": "edf7ef40-e444-43cf-aed2-5a760f86bcfe",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        1280,
+        400
+      ],
+      "id": "4f1ff4f3-4f07-4eeb-a315-394791a48eb5",
+      "name": "Merge1"
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.first().json;\n\n// Data is directly on the object, not nested under 'analysis'\nconst podium = raw.payload.podium;\nconst championship = raw.championship; // or raw.analysis — both exist\n\nconst body = {\n  model: \"claude-haiku-4-5-20251001\",\n  max_tokens: 400,\n  messages: [{\n    role: \"user\",\n    content: `Write a Facebook post for an F1 fan page. Casual, excited, use emojis. Max 180 words. End with a question.\\n\\nRace: ${raw.payload.race.name} ${raw.payload.race.season}\\nWinner: ${podium[0].driver} — ${podium[0].Constructors ? podium[0].Constructors[0].name : 'Mercedes'}\\n2nd: ${podium[1].driver} | 3rd: ${podium[2].driver}\\nWinner story: ${raw.analysis.wdc_narrative}\\nChampionship: ${championship.wdc_narrative}\\nRating: Race at ${raw.payload.race.circuit}\\n\\nReturn ONLY the post text.`\n  }]\n};\n\nreturn [{ json: { body } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1728,
+        208
+      ],
+      "id": "c6c6d6c5-43dd-4751-ac1a-02881bca0287",
+      "name": "Code in JavaScript1"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = items[0].json;\n\nconst analysis = input.analysis;\nconst championship = input.championship;\n\nconst body = {\n  model: \"claude-haiku-4-5-20251001\",\n  max_tokens: 700,\n  messages: [\n    {\n      role: \"user\",\n      content: `WDC: ${championship.wdc_leader} leads ${championship.wdc_second} by ${championship.wdc_gap}\n\nRace verdict: ${analysis.championship_verdict}\nNext: ${analysis.next_race_stakes}\n\nReturn ONLY Discord message.`\n    }\n  ]\n};\n\nreturn [\n  {\n    json: {\n      body\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1728,
+        400
+      ],
+      "id": "2bd7f428-e7a9-4726-9951-0c2893156088",
+      "name": "Code in JavaScript2"
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.first().json;\n\n// Safe data extraction\nconst podium = raw.payload?.podium || [];\nconst race = raw.payload?.race || {};\nconst winner = raw.payload?.winner || {};\nconst fastestLap = raw.payload?.fastestLapHolder || {};\nconst biggestMover = raw.payload?.biggestMover || {};\nconst championship = raw.championship || {};\n\n// Safer DNF handling\nconst dnfs = raw.payload?.dnfs?.filter(d => d.status === 'Retired')\n  .map(d => d.driver)\n  .join(', ') || 'None';\n\n// Build prompt\nconst prompt = `\nYou are an elite motorsport journalist AND a professional email UI designer.\n\nYour task is to generate a visually stunning, modern HTML email newsletter for a Formula 1 race.\n\n=====================\nCRITICAL INSTRUCTIONS\n=====================\n- You MUST include ALL sections\n- You MUST NOT stop early\n- Minimum output length: 900 words\n- Output MUST be complete valid HTML ending with </html>\n- Use ONLY inline CSS (no external styles)\n- Dark theme (black/grey background, red #dc0000 accents)\n- Clean spacing, card layout, premium feel\n\n=====================\nSTRUCTURE (MANDATORY)\n=====================\nInclude ALL of these sections with clear visual separation:\n\n1. HEADER\n2. RACE INFO\n3. PODIUM (3 columns)\n4. RACE HIGHLIGHTS\n5. CHAMPIONSHIP\n6. FOOTER\n\nIf any section is missing, the output is INVALID.\n\n=====================\nCONTENT RULES\n=====================\n- Winner story MUST be at least 150 words\n- Write like a real F1 journalist (insight, narrative, race dynamics)\n- No bullet spam\n- No raw JSON repetition\n- Use strong typography hierarchy in HTML\n\n=====================\nRACE DATA\n=====================\nRace: ${race.name} ${race.season}\nRound: ${race.round}\nCircuit: ${race.circuit}\nLocation: ${race.city}, ${race.country}\nDate: ${race.date}\n\n=====================\nPODIUM\n=====================\n1st: ${podium[0]?.driver} (${podium[0]?.nationality}) — ${podium[0]?.time}\n2nd: ${podium[1]?.driver} — ${podium[1]?.time}\n3rd: ${podium[2]?.driver} — ${podium[2]?.time}\n\n=====================\nHIGHLIGHTS\n=====================\nWinner started: P${winner.gridPosition}\nFastest Lap: ${fastestLap?.driver} — ${fastestLap?.fastestLap?.Time?.time}\nBiggest Mover: ${biggestMover?.driver} (+${biggestMover?.positionsGained} places, P${biggestMover?.gridPosition}→P${biggestMover?.position})\nDNFs: ${dnfs}\n\n=====================\nCHAMPIONSHIP\n=====================\nWDC Leader: ${championship.wdc_leader} (+${championship.wdc_gap} pts over ${championship.wdc_second})\nWDC Story: ${championship.wdc_narrative}\n\nWCC Leader: ${championship.wcc_leader} (+${championship.wcc_gap} pts)\nWCC Story: ${championship.wcc_narrative}\n\nRaces Remaining: ${championship.races_remaining}\nPoints Available: ${championship.points_available}\n\n=====================\nFINAL OUTPUT RULE\n=====================\nReturn ONLY the HTML. No explanations. No markdown.\n`;\n\nconst body = {\n  model: \"claude-haiku-4-5-20251001\", // \n  max_tokens: 4000, // more breathing room\n  messages: [\n    {\n      role: \"user\",\n      content: prompt\n    }\n  ]\n};\n\nreturn [{ json: { body } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1728,
+        592
+      ],
+      "id": "7558b6e5-ac64-4666-8238-490cd4624e12",
+      "name": "Code in JavaScript3"
+    },
+    {
+      "parameters": {
+        "jsCode": "const analysis = JSON.parse($json.raw_analysis_json);\nconst championship = JSON.parse($json.raw_championship_json);\n\nconst season = $json.season;\nconst round = $json.round;\nconst wdcLeader = $json.wdc_leader;\nconst wdcSecond = analysis.wdc_second;\nconst wdcGap = $json.wdc_gap;\nconst wccLeader = analysis.wcc_leader;\nconst wccGap = analysis.wcc_gap;\nconst racesRemaining = $json.races_remaining;\nconst pointsAvailable = $json.points_available;\nconst verdict = $json.championship_verdict;\nconst nextRace = analysis.next_race_stakes;\n\nconst message = `🏁 F1 ${season} — Round ${round} Wrap\n\n🏆 WDC: ${wdcLeader}\n🥈 P2: ${wdcSecond} (${wdcGap} pts behind)\n\n🏗️ WCC: ${wccLeader} (+${wccGap} pts ahead)\n\n📊 Races left: ${racesRemaining}\n🔥 Points still available: ${pointsAvailable}\n\n📝 ${verdict}\n\n⏭️ ${nextRace}\n\n— Formula Madness 🔴`;\n\nreturn [{ json: { message } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2624,
+        592
+      ],
+      "id": "eda155a0-8c53-498f-961e-05ed70ff88fd",
+      "name": "Code in JavaScript4"
+    },
+    {
+      "parameters": {
+        "jsCode": "const raceDate = $json.MRData.RaceTable.Races[0].date;\nconst today = new Date().toISOString().split('T')[0];\nconst isRaceDay = raceDate === today;\n\nreturn [{ json: { isRaceDay, raceDate, today } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -288,
+        512
+      ],
+      "id": "9404f40a-13ee-470b-bc80-6d4b4d107b8d",
+      "name": "Code in JavaScript5"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "122d11ac-a304-43f6-9ea2-37914a3cefcf",
+              "leftValue": "={{ $json.isRaceDay }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -64,
+        512
+      ],
+      "id": "ebdbf412-a5dc-496b-b66b-e9639b629205",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "ENTER_YOUR_API_KEY"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "{   \"model\": \"claude-haiku-4-5-20251001\",   \"max_tokens\": 200,   \"messages\": [     {       \"role\": \"user\",       \"content\": \"Give me one short, surprising and interesting F1 fact. Keep it under 3 sentences. No hashtags. No markdown. Plain text only.\"     }   ] }",
+        "options": {}
+      },
+      "id": "d45030e7-c3f4-4f94-b60e-1aeb22f3be65",
+      "name": "F1 - Fact Generator",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        160,
+        1168
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "EZtHuLk0ZD3sdVXx",
+          "name": "Header Auth account"
+        }
+      },
+      "notes": "Sonnet for deep analysis. Credential: HTTP Header Auth → x-api-key → your sk-ant-... key"
+    },
+    {
+      "parameters": {
+        "sendTo": "LIST_RECEIVER_EMAIL",
+        "subject": "={{ $('Build Unified Payload').isExecuted ? $('Build Unified Payload').item.json.raceName : 'F1 Daily Fact' }}",
+        "message": "={{ $json.content[0].text }}",
+        "options": {
+          "appendAttribution": false,
+          "replyTo": "your@email.com"
+        }
+      },
+      "id": "79a82768-ef11-4b3a-9b60-604974565368",
+      "name": "Send Gmail Newsletter1",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        384,
+        1024
+      ],
+      "webhookId": "20edcd2c-2fea-475e-ba24-75fdc2f0c542",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "F52HlEZdQ71atokB",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "YOUR_WEHBOOK_URL",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "content",
+              "value": "={{ $json.content[0].text }}"
+            },
+            {
+              "name": "username",
+              "value": "YOUR_USERNAME"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "d833d9b7-fc8f-47d6-a4ac-d80100051368",
+      "name": "Post to Discord1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        384,
+        1216
+      ]
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -736,
+        512
+      ],
+      "id": "9e119772-371a-495b-a636-cd05001bc8f8",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "url": "https://api.jolpi.ca/ergast/f1/current/next.json",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -512,
+        512
+      ],
+      "id": "3455b6dd-ea68-4e80-b279-1ecb526364ba",
+      "name": "Checking Raceday"
+    },
+    {
+      "parameters": {
+        "chatId": "YOUR_CHAT_ID",
+        "text": "={{ $json.content[0].text }}",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "b24d6671-6242-4cd7-8609-e973023aaad7",
+      "name": "Telegram – Done Alert1",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        400,
+        1408
+      ],
+      "webhookId": "3f85a4c6-6752-429a-b152-44dc153d9465",
+      "credentials": {
+        "telegramApi": {
+          "id": "8kfhpD4U4TP9OyiW",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://graph.facebook.com/v19.0/1USER_ID/feed",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "access_token",
+              "value": "YOUR_API"
+            },
+            {
+              "name": "message",
+              "value": "={{ $json.content[0].text }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "25587ff4-99c6-4811-9ad0-e4ed45c220e7",
+      "name": "Post to Facebook1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        448,
+        1600
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Jolpica – Race Results": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Jolpica – Qualifying": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Jolpica – Driver Standings": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Jolpica – Constructor Standings": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 3
+          }
+        ]
+      ]
+    },
+    "Jolpica – Pit Stops": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 4
+          }
+        ]
+      ]
+    },
+    "Jolpica – Season Schedule": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 5
+          }
+        ]
+      ]
+    },
+    "Build Unified Payload": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI – Race Analysis": {
+      "main": [
+        [
+          {
+            "node": "Merge1",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "AI – Championship Analysis": {
+      "main": [
+        [
+          {
+            "node": "Merge1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse AI Outputs": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript1",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Code in JavaScript2",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Code in JavaScript3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate – Discord Message": {
+      "main": [
+        [
+          {
+            "node": "Post to Discord",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate – Email HTML": {
+      "main": [
+        [
+          {
+            "node": "Send Gmail Newsletter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Post to Discord": {
+      "main": [
+        [
+          {
+            "node": "Build DB Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Gmail Newsletter": {
+      "main": [
+        [
+          {
+            "node": "Build DB Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build DB Record": {
+      "main": [
+        [
+          {
+            "node": "Save to Supabase",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Code in JavaScript4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Build Unified Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "AI – Championship Analysis",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "AI – Race Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge1": {
+      "main": [
+        [
+          {
+            "node": "Parse AI Outputs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript1": {
+      "main": [
+        [
+          {
+            "node": "Generate – Facebook Post",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript2": {
+      "main": [
+        [
+          {
+            "node": "Generate – Discord Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript3": {
+      "main": [
+        [
+          {
+            "node": "Generate – Email HTML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript4": {
+      "main": [
+        [
+          {
+            "node": "Telegram – Done Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript5": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Jolpica – Race Results",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Jolpica – Qualifying",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Jolpica – Driver Standings",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Jolpica – Constructor Standings",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Jolpica – Pit Stops",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Jolpica – Season Schedule",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "F1 - Fact Generator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "F1 - Fact Generator": {
+      "main": [
+        [
+          {
+            "node": "Send Gmail Newsletter1",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Post to Discord1",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Telegram – Done Alert1",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Post to Facebook1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "Checking Raceday",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Checking Raceday": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript5",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "b49dfdf4-0c9a-4e44-84d4-5c8c1fd57e4e",
+  "meta": {
+    "instanceId": "7ee5bd48292a59cc15bd3e0ebe321d4916dfb92ad89546846b59c4baf57a2268"
+  },
+  "id": "kntCFTPwgcr5zOTY",
+  "tags": [
+    {
+      "updatedAt": "2026-04-23T01:33:58.031Z",
+      "createdAt": "2026-04-23T01:33:58.031Z",
+      "id": "3K3b3ufGtBy9d6bP",
+      "name": "v5"
+    },
+    {
+      "updatedAt": "2026-04-20T00:19:54.266Z",
+      "createdAt": "2026-04-20T00:19:54.266Z",
+      "id": "4gsIsbL55Dt9lRD8",
+      "name": "F1"
+    },
+    {
+      "updatedAt": "2026-04-23T01:21:53.839Z",
+      "createdAt": "2026-04-23T01:21:53.839Z",
+      "id": "wx8fUg4W9nzik3MU",
+      "name": "Jolpica"
+    }
+  ]
+}
